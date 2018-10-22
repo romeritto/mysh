@@ -13,7 +13,7 @@ before_install:
     - cd ../..
     - rm -r cmocka
 script:
-    mkdir build
-    cd build
-    cmake ..
-    make && make test
+    - mkdir build
+    - cd build
+    - cmake ..
+    - make && make test
