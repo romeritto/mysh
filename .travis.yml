@@ -11,7 +11,8 @@ before_install:
     - cd cmocka && mkdir build && cd build
     - cmake .. && make -j2 && sudo make install
     - cd ../..
-    - rm -r cmocka
+    - rm -rf cmocka
+
 script:
     - mkdir build
     - cd build
