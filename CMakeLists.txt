@@ -7,7 +7,7 @@ set(VERSION_MINOR 0)
 set(VERSION_PATCH 0)
 
 # TODO(CLang) support
-add_compile_options(-Wall -Wextra -Werror -Wpedantic)
+add_compile_options(-Wall -Wextra -Wpedantic)
 
 # TODO(Debug) treat debug and release differently
 # add_compile_options()
