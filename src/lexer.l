@@ -41,7 +41,7 @@ NON_SPECIAL_CHAR    [^ \r\t\f<>|;#\\'`"\]\[&\n]
 \n                         return END_OF_LINE;
 
 {NON_SPECIAL_CHAR}+         {
-                                yylval.string_un = strdup(yytext);
+                                yylval.word_un = strdup(yytext);
                                 return WORD;
                             }
 

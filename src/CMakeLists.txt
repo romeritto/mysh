@@ -18,6 +18,7 @@ add_executable(Foo
     ${BISON_MyshParser_OUTPUTS}
     ${FLEX_MyshScanner_OUTPUTS}
     ${BISON_MyshParser_OUTPUT_HEADER}
+    utils.c utils.h
 )
 
 target_include_directories(
