@@ -1,6 +1,6 @@
 /* Scanner for mysh */
 
-%option noyywrap 
+%option noyywrap nostdinit
 
 %{
 #include "cmd.h"
@@ -50,4 +50,14 @@ NON_SPECIAL_CHAR    [^ \r\t\f<>|;#\\'`"\]\[&\n]
 <<EOF>>                     return END_OF_FILE;
 
 .                           yyerror("unknown char");
+
 %%
+
+YY_BUFFER_STATE myState;
+
+void init_lexer_with_line(const char * line)
+{
+	yylex_destroy();
+	myState = yy_scan_string(line);
+	BEGIN(INITIAL);
+}

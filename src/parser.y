@@ -1,135 +1,35 @@
+%error-verbose
+%define parse.lac full
+
 %{
 #include "cmd.h"
 #include "utils.h"
 
 #include <stdio.h>
-//#include <stdlib.h>
 #include <sys/queue.h>
 #include <assert.h>
 #include <string.h> // strdup
 #include <err.h>
 
+#include "parser.h"
+
 // Bison needs to know about flex 
 extern int yylex();
+extern void init_lexer_with_line(char *);
+extern void yyerror(const char *);
 
-extern void yyerror(char *);
-
-//extern int yydebug;
-//yydebug = 1;
-
-static void word_list_append(word_list_t * wl, word_t word) {
-	word_en_t * word_en = (word_en_t *) safe_malloc(sizeof(word_en_t));
-	word_en->value = word;
-	STAILQ_INSERT_TAIL(wl, word_en, entries);
-}
-
-static redir_list_t * redir_list_append(redir_list_t * rl, int type_flag, word_t fname) {
-    redir_t * redir = (redir_t *) safe_malloc(sizeof(redir_t));
-    redir->type_flag = type_flag;
-    redir->fname = fname;
-
-    redir_en_t * redir_en = (redir_en_t *) safe_malloc(sizeof(redir_en_t));
-	redir_en->value = redir;
-    
-	STAILQ_INSERT_TAIL(rl, redir_en, entries);
-    return rl;
-}
-
-static redir_list_t * redir_list_create() {
-    redir_list_t * rl = 
-        (redir_list_t *) safe_malloc(sizeof(redir_list_t)); 
-    STAILQ_INIT(rl);
-    return rl;
-}
-
-static command_t * new_command(operator_t op, command_t *l, command_t *r, simple_command_t *scmd) {
-    command_t * cmd = (command_t *) safe_malloc(sizeof(command_t));
-    cmd->up = NULL;
-    cmd->cmd1 = l;
-    cmd->cmd2 = r;
-    cmd->op = op;
-    cmd->scmd = scmd;
-    
-    if (scmd != NULL) {
-        assert(l == NULL && r == NULL && op == OP_NONE);
-        scmd->up = cmd;
-    } else {
-        assert(l != NULL && r != NULL && op != OP_NONE);
-        l->up = r->up = cmd;
-    }
-    return cmd;
-}
-
-static void process_redir_list(redir_list_t * rl, simple_command_t * scmd) {
-    redir_en_t *redir_en;
-    STAILQ_FOREACH(redir_en, rl, entries) {
-        // Duplicates the fname string to ease the deallocation
-        switch(redir_en->value->type_flag) {
-            case IO_REDIRECT_IN:
-                scmd->io_flags |= IO_REDIRECT_IN;
-                scmd->redir_in = strdup(redir_en->value->fname);
-                break;
-            case IO_REDIRECT_OUT:
-                // Remove append flag 
-                scmd->io_flags &= ~IO_REDIRECT_APPEND_OUT;
-                scmd->io_flags |= IO_REDIRECT_OUT;
-                scmd->redir_out = strdup(redir_en->value->fname);
-                break;
-            case IO_REDIRECT_APPEND_OUT:
-                // Remove out flag
-                scmd->io_flags &= ~IO_REDIRECT_OUT;
-                scmd->io_flags |= IO_REDIRECT_APPEND_OUT;
-                scmd->redir_out = strdup(redir_en->value->fname);
-                break;
-           default:
-                err(10, "Internal: unknown io_flag"); 
-        } 
-    }
-
-    // Deallocate the list
-    while (!STAILQ_EMPTY(rl)) {
-        redir_en = STAILQ_FIRST(rl);
-        STAILQ_REMOVE_HEAD(rl, entries);
-        free(redir_en->value->fname);
-        free(redir_en->value);
-        free(redir_en);
-    }
-    free(rl);
-}
-
-static void print_word_list(word_list_t *wl) {
-    word_en_t *word_en;
-    STAILQ_FOREACH(word_en, wl, entries) {
-        printf("\t%s\n", word_en->value);
-    }
-}
-static void print_command_tree(command_t *cmd) {
-    if (cmd->scmd != NULL) {
-        printf("Simple cmd:\n");
-        print_word_list(cmd->scmd->params);
-        printf("\tRedir:\n");
-        printf("\t\tflags %d\n", cmd->scmd->io_flags);
-        printf("\t\tIN %s\n", cmd->scmd->redir_in);
-        printf("\t\tOUT %s\n", cmd->scmd->redir_out);
-        return;
-    }
-    print_command_tree(cmd->cmd1);
-    print_command_tree(cmd->cmd2);
-    switch(cmd->op) {
-        case OP_PIPE: printf("|\n"); break;
-        case OP_SEQUENTIAL: printf(";\n"); break;
-        case OP_NONE: printf("We should error out\n");
-    }
-}
+// Instead of using yylineno and yyloc, we just define line_num
+static int line_num;
+static seq_list_t *rootp = NULL;
 %}
 
 %union {
-	word_t word_un;
-	word_list_t * word_list_un;
-    redir_t redir_un;
-	redir_list_t * redir_list_un;
-	command_t * command_un;
-	simple_command_t * simple_command_un;
+	char *word_un;
+	arg_list_t *arg_list_un;
+	redir_list_t *redir_list_un;
+	command_t *command_un;
+	piped_list_t *piped_list_un;
+	seq_list_t *seq_list_un;
 }
 
 %token END_OF_FILE END_OF_LINE
@@ -139,113 +39,121 @@ static void print_command_tree(command_t *cmd) {
 %left SEQUENTIAL
 %left PIPE
 
-%type <word_list_un> word_list
-%type <redir_list_un> redirection
-%type <redir_list_un> redirection_list
+%type <seq_list_un> seq_list
+%type <seq_list_un> root_internal
+%type <piped_list_un> piped_list
 %type <command_un> command
-/* %type redirect */
-%type <simple_command_un> simple_command
-%type <command_un> command_tree
+%type <redir_list_un> redir
+%type <redir_list_un> redir_list
+%type <arg_list_un> arg_list
 
-%start command_root
+%start root
 
 %%
 
-command_root: 
-            command_tree {
-                print_command_tree($1);
-                YYACCEPT;
+root: 
+            root_internal {
+                rootp = $1;
+		YYACCEPT;
             }
 
-command_tree:
-            command END_OF_LINE { $$ = $1; }
-            | command END_OF_FILE { $$ = $1; }
-            | command SEQUENTIAL END_OF_LINE { $$ = $1; }
-            | command SEQUENTIAL END_OF_FILE { $$ = $1; }
+root_internal:
+            seq_list END_OF_LINE { $$ = $1; }
+            | seq_list END_OF_FILE { $$ = $1; }
+            | seq_list SEQUENTIAL END_OF_LINE { $$ = $1; }
+            | seq_list SEQUENTIAL END_OF_FILE { $$ = $1; }
             | END_OF_LINE { $$ = NULL; }
             | END_OF_FILE { $$ = NULL; }
 
-command:
-            command PIPE command {
-                $$ = new_command(OP_PIPE, $1, $3, NULL);
-            }
-            | command SEQUENTIAL command {
-                $$ = new_command(OP_SEQUENTIAL, $1, $3, NULL);
-            }
-            | redirection_list simple_command redirection_list {
-                process_redir_list($1, $2);
-                process_redir_list($3, $2);
-                $$ = new_command(OP_NONE, NULL, NULL, $2);
-            }
+seq_list:
+		piped_list {
+	    		seq_list_t *sl = 
+				(seq_list_t *) safe_malloc(sizeof(seq_list_t));
+			STAILQ_INIT(sl);
+			append_seq_list(sl, $1);
+			$$ = sl;
+		}
+		| seq_list SEQUENTIAL piped_list {
+			append_seq_list($1, $3);
+			$$ = $1;
+		}
 
-redirection_list:
-            /* empty */ { $$ = redir_list_create(); }
-            | redirection_list redirection {
-				STAILQ_CONCAT($1, $2);
-                $$ = $1;
-            }
+piped_list:
+		command {
+			piped_list_t * pl = 
+				(piped_list_t *)
+				safe_malloc(sizeof(piped_list_t));
+			STAILQ_INIT(pl);
+			append_piped_list(pl, $1);
+			$$ = pl;
+		}
+		| piped_list PIPE command {
+			append_piped_list($1, $3);
+			$$ = $1;
+		}
 
-redirection:
-            REDIRECT_IN WORD {
-				$$ = redir_list_create();
-                redir_list_append($$, IO_REDIRECT_IN, $2);
-            }
-            | REDIRECT_OUT WORD {
-				$$ = redir_list_create();
-                redir_list_append($$, IO_REDIRECT_OUT, $2);
-            }
-            | REDIRECT_APPEND_OUT WORD {
-				$$ = redir_list_create();
-                redir_list_append($$, IO_REDIRECT_APPEND_OUT, $2);
-            }
+command:	
+		redir_list arg_list redir_list {
+			command_t *cmd = 
+			    (command_t *) safe_malloc(sizeof(command_t));
+			cmd->arg_list = $2;
+			STAILQ_CONCAT($1, $3);
+			cmd->redir_list = $1;
+			$$ = cmd;
+		}
 
-simple_command:
-			word_list {
-                simple_command_t * sc = 
-                    (simple_command_t *) safe_malloc(sizeof(simple_command_t));
-                sc->params = $1;
-                sc->redir_in = sc->redir_out = NULL;
-                sc->io_flags = IO_REGULAR;
-                sc->up = NULL;
-                $$ = sc;
-			}
+redir_list:
+		/* empty */ { $$ = create_redir_list(); }
+		| redir_list redir {
+			STAILQ_CONCAT($1, $2);
+			$$ = $1;
+		}
 
-word_list:
-            word_list WORD {
-				word_list_append($1, $2);
-                $$ = $1;
-            }
-            | WORD {
-				word_list_t * wl = 
-					(word_list_t *) safe_malloc(sizeof(word_list_t)); 
-				STAILQ_INIT(wl);
-				word_list_append(wl, $1);
-				$$ = wl;
-			}
+redir:
+		REDIRECT_IN WORD {
+			$$ = create_redir_list();
+			append_redir_list($$, REDIR_IN, $2);
+		}
+		| REDIRECT_OUT WORD {
+			$$ = create_redir_list();
+			append_redir_list($$, REDIR_OUT, $2);
+		}
+		| REDIRECT_APPEND_OUT WORD {
+			$$ = create_redir_list();
+			append_redir_list($$, REDIR_APPEND_OUT, $2);
+		}
+
+arg_list:
+		arg_list WORD {
+			append_arg_list($1, $2);
+			$$ = $1;
+		}
+		| WORD {
+			arg_list_t * wl = 
+				(arg_list_t *) safe_malloc(sizeof(arg_list_t));
+			STAILQ_INIT(wl);
+			append_arg_list(wl, $1);
+			$$ = wl;
+		}
 %%
 
-int main(void) {
-	// Parse through the input:
-	yyparse();
-	return 0;
+int
+parse_line(char * line, size_t curline, seq_list_t **rootpp) {
+	assert(line != NULL);
+	
+	init_lexer_with_line(line);
+	line_num = curline;
+	
+	if (yyparse() != 0) {
+		return (1);
+	}
+
+	*rootpp = rootp; 
+	return (0);
 }
 
-void yyerror(char *s) {
-	printf("%s\n", s);
-	// might as well halt now:
-	exit(-1);
+void yyerror(const char *msg)
+{
+	fprintf(stderr, "error:%d: %s\n", line_num, msg);
+	// TODO: Memory leaaaks
 }
-
-// Parkplatz
-//word_en_t *word_en;
-//STAILQ_FOREACH(word_en, $1, entries) {
-//    printf("Read1: %s\n", word_en->value);
-//}
-//
-//while (!STAILQ_EMPTY($1)) {
-//    word_en = STAILQ_FIRST($1);
-//    STAILQ_REMOVE_HEAD($1, entries);
-//    free(word_en->value);
-//    free(word_en);
-//}
-//free($1);
