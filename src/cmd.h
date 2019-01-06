@@ -1,5 +1,5 @@
-#ifndef __CMD_H
-#define	__CMD_H
+#ifndef CMD_H
+#define	CMD_H
 
 #include <sys/queue.h>  // STAILQ
 #include <stddef.h> 	// size_t
@@ -39,7 +39,7 @@ typedef struct {
 	redir_list_t *redir_list;
 } command_t;
 
-/* Single piped list entry. It's just a list of commands... */
+/* Single piped list entry. It's just a list of commands in REVERSED order! */
 struct piped_en_s {
 	command_t *value;
 	STAILQ_ENTRY(piped_en_s) entries;
@@ -65,6 +65,7 @@ typedef STAILQ_HEAD(seq_list_s, seq_en_s) seq_list_t;
  */
 int parse_line(char * line, size_t line_num, seq_list_t **root);
 redir_list_t *create_redir_list();
+
 redir_list_t *append_redir_list(
 	redir_list_t * rl,
         redir_type type,
@@ -73,4 +74,4 @@ piped_list_t *append_piped_list(piped_list_t *pl, command_t *cmd);
 seq_list_t *append_seq_list(seq_list_t *sl, piped_list_t *pl);
 arg_list_t *append_arg_list(arg_list_t *al, char *arg);
 
-#endif // __CMD_H
+#endif // CMD_H

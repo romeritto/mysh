@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <readline/readline.h>
+#include <readline/history.h>
 
 #include "cmd.h"
 #include "execute.h"
@@ -97,12 +98,13 @@ main(int argc, char **argv)
 
 int
 serve_interactive() {
+	using_history();
 	char *line = NULL;
 	while ((line = readline(PROMPT)) != NULL) {
 		seq_list_t *rootp;
-		parse_line(line, 1, &rootp);
-		execute(rootp);
-		free(line);
+		if (parse_line(line, 1, &rootp) == 0) execute(rootp);
+		if (strcmp(line, "") != 0) add_history(line);
+		if (should_exit) break;
 	}
 	return (0);
 }

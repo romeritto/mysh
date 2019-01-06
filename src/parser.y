@@ -54,7 +54,7 @@ static seq_list_t *rootp = NULL;
 root: 
             root_internal {
                 rootp = $1;
-		YYACCEPT;
+                YYACCEPT;
             }
 
 root_internal:

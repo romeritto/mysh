@@ -20,7 +20,7 @@ target_include_directories(
     	${CMAKE_CURRENT_SOURCE_DIR})
 
 # Project executable
-add_executable(mysh main.c execute.c utils.c)
+add_executable(mysh main.c execute.c cd.c utils.c)
 target_link_libraries(mysh MyshParser)
 target_link_libraries(mysh readline)
 target_include_directories(

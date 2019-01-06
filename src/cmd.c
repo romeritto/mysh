@@ -5,8 +5,7 @@
 
 redir_list_t *
 create_redir_list() {
-	redir_list_t * rl =
-		(redir_list_t *) safe_malloc(sizeof(redir_list_t));
+	redir_list_t * rl = (redir_list_t *) safe_malloc(sizeof(redir_list_t));
 	STAILQ_INIT(rl);
 	return rl;
 }
