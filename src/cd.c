@@ -14,10 +14,22 @@ cd(int argc, char **argv)
 	switch (argc) {
 	case 1:
 		newdir = getenv("HOME");
+		if (newdir == NULL) {
+			warnx("cd: HOME environment var not defined");
+			return (1);
+		}
 		break;
 	case 2:
-		if (strcmp(argv[1], "-") == 0)	newdir = getenv("OLDPWD");
-		else 				newdir = argv[1];
+		if (strcmp(argv[1], "-") == 0) {
+			newdir = getenv("OLDPWD");
+			if (newdir == NULL) {
+				warnx(
+				     "cd: OLDPWD environment var not defined");
+				return (1);
+			}
+		} else {
+			newdir = argv[1];
+		}
 		break;
 	default:
 		warnx("cd: too many arguments");
@@ -36,13 +48,16 @@ cd(int argc, char **argv)
 	/* Update PWD and OLDPWD */
 	if (setenv("OLDPWD", getenv("PWD"), /* overwrite = */ 1) == -1) {
 		warn("cd: setenv");
+		free(newdir);
 		return (1);
 	}
 
 	if (setenv("PWD", newdir, /* overwrite = */ 1) == -1) {
 		warn("cd: setenv");
+		free(newdir);
 		return (1);
 	}
-
+	
+	free(newdir);
 	return (0);
 }

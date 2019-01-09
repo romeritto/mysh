@@ -12,6 +12,7 @@ target_sources(
 	${BISON_MyshBison_OUTPUTS}
 	PRIVATE 
 	${FLEX_MyshFlex_OUTPUTS}
+	execute.c
 	cmd.c
 	utils.c)
 target_include_directories(

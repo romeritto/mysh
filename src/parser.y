@@ -3,23 +3,25 @@
 
 %{
 #include "cmd.h"
+#include "execute.h"
 #include "utils.h"
 
 #include <stdio.h>
 #include <sys/queue.h>
 #include <assert.h>
-#include <string.h> // strdup
 #include <err.h>
 
 #include "parser.h"
 
 // Bison needs to know about flex 
 extern int yylex();
+extern int yylex_destroy();
 extern void init_lexer_with_line(char *);
 extern void yyerror(const char *);
 
-// Instead of using yylineno and yyloc, we just define line_num
-static int line_num;
+/* Line number of currectly parsed line. */
+static int line_num = 0;
+/* seq_list containing the parsed line. */
 static seq_list_t *rootp = NULL;
 %}
 
@@ -31,6 +33,13 @@ static seq_list_t *rootp = NULL;
 	piped_list_t *piped_list_un;
 	seq_list_t *seq_list_un;
 }
+
+%destructor { free($$); } <word_un>
+%destructor { free_arg_list($$); } <arg_list_un>
+%destructor { free_redir_list($$); } <redir_list_un>
+%destructor { free_command($$); } <command_un>
+%destructor { free_piped_list($$); } <piped_list_un>
+%destructor { free_seq_list($$); } <seq_list_un>
 
 %token END_OF_FILE END_OF_LINE
 %token REDIRECT_IN REDIRECT_OUT REDIRECT_APPEND_OUT
@@ -52,93 +61,94 @@ static seq_list_t *rootp = NULL;
 %%
 
 root: 
-            root_internal {
-                rootp = $1;
-                YYACCEPT;
-            }
+	root_internal {
+		rootp = $1;
+		YYACCEPT;
+	}
 
 root_internal:
-            seq_list END_OF_LINE { $$ = $1; }
-            | seq_list END_OF_FILE { $$ = $1; }
-            | seq_list SEQUENTIAL END_OF_LINE { $$ = $1; }
-            | seq_list SEQUENTIAL END_OF_FILE { $$ = $1; }
-            | END_OF_LINE { $$ = NULL; }
-            | END_OF_FILE { $$ = NULL; }
+	seq_list END_OF_LINE { $$ = $1; }
+	| seq_list END_OF_FILE { $$ = $1; }
+	| seq_list SEQUENTIAL END_OF_LINE { $$ = $1; }
+	| seq_list SEQUENTIAL END_OF_FILE { $$ = $1; }
+	| END_OF_LINE { $$ = NULL; }
+	| END_OF_FILE { $$ = NULL; }
 
 seq_list:
-		piped_list {
-	    		seq_list_t *sl = 
-				(seq_list_t *) safe_malloc(sizeof(seq_list_t));
-			STAILQ_INIT(sl);
-			append_seq_list(sl, $1);
-			$$ = sl;
-		}
-		| seq_list SEQUENTIAL piped_list {
-			append_seq_list($1, $3);
-			$$ = $1;
-		}
+	piped_list {
+		seq_list_t *sl = 
+			(seq_list_t *) safe_malloc(sizeof(seq_list_t));
+		STAILQ_INIT(sl);
+		append_seq_list(sl, $1);
+		$$ = sl;
+	}
+	| seq_list SEQUENTIAL piped_list {
+		append_seq_list($1, $3);
+		$$ = $1;
+	}
 
 piped_list:
-		command {
-			piped_list_t * pl = 
-				(piped_list_t *)
-				safe_malloc(sizeof(piped_list_t));
-			STAILQ_INIT(pl);
-			append_piped_list(pl, $1);
-			$$ = pl;
-		}
-		| piped_list PIPE command {
-			append_piped_list($1, $3);
-			$$ = $1;
-		}
+	command {
+		piped_list_t * pl = 
+			(piped_list_t *)
+			safe_malloc(sizeof(piped_list_t));
+		STAILQ_INIT(pl);
+		append_piped_list(pl, $1);
+		$$ = pl;
+	}
+	| piped_list PIPE command {
+		append_piped_list($1, $3);
+		$$ = $1;
+	}
 
 command:	
-		redir_list arg_list redir_list {
-			command_t *cmd = 
-			    (command_t *) safe_malloc(sizeof(command_t));
-			cmd->arg_list = $2;
-			STAILQ_CONCAT($1, $3);
-			cmd->redir_list = $1;
-			$$ = cmd;
-		}
+	redir_list arg_list redir_list {
+		command_t *cmdp = (command_t *) safe_malloc(sizeof(command_t));
+		cmdp->arg_list = $2;
+		STAILQ_CONCAT($1, $3);
+		free($3);
+		cmdp->redir_list = $1;
+		$$ = cmdp;
+	}
 
 redir_list:
-		/* empty */ { $$ = create_redir_list(); }
-		| redir_list redir {
-			STAILQ_CONCAT($1, $2);
-			$$ = $1;
-		}
+	/* empty */ { $$ = create_redir_list(); }
+	| redir_list redir {
+		STAILQ_CONCAT($1, $2);
+		free($2);
+		$$ = $1;
+	}
 
 redir:
-		REDIRECT_IN WORD {
-			$$ = create_redir_list();
-			append_redir_list($$, REDIR_IN, $2);
-		}
-		| REDIRECT_OUT WORD {
-			$$ = create_redir_list();
-			append_redir_list($$, REDIR_OUT, $2);
-		}
-		| REDIRECT_APPEND_OUT WORD {
-			$$ = create_redir_list();
-			append_redir_list($$, REDIR_APPEND_OUT, $2);
-		}
+	REDIRECT_IN WORD {
+		$$ = create_redir_list();
+		append_redir_list($$, REDIR_IN, $2);
+	}
+	| REDIRECT_OUT WORD {
+		$$ = create_redir_list();
+		append_redir_list($$, REDIR_OUT, $2);
+	}
+	| REDIRECT_APPEND_OUT WORD {
+		$$ = create_redir_list();
+		append_redir_list($$, REDIR_APPEND_OUT, $2);
+	}
 
 arg_list:
-		arg_list WORD {
-			append_arg_list($1, $2);
-			$$ = $1;
-		}
-		| WORD {
-			arg_list_t * wl = 
-				(arg_list_t *) safe_malloc(sizeof(arg_list_t));
-			STAILQ_INIT(wl);
-			append_arg_list(wl, $1);
-			$$ = wl;
-		}
+	arg_list WORD {
+		append_arg_list($1, $2);
+		$$ = $1;
+	}
+	| WORD {
+		arg_list_t * wl = 
+			(arg_list_t *) safe_malloc(sizeof(arg_list_t));
+		STAILQ_INIT(wl);
+		append_arg_list(wl, $1);
+		$$ = wl;
+	}
 %%
 
 int
-parse_line(char * line, size_t curline, seq_list_t **rootpp) {
+parse_line(char * line, int curline, seq_list_t **rootpp) {
 	assert(line != NULL);
 	
 	init_lexer_with_line(line);
@@ -148,6 +158,8 @@ parse_line(char * line, size_t curline, seq_list_t **rootpp) {
 		return (1);
 	}
 
+	yylex_destroy();
+
 	*rootpp = rootp; 
 	return (0);
 }
@@ -155,5 +167,5 @@ parse_line(char * line, size_t curline, seq_list_t **rootpp) {
 void yyerror(const char *msg)
 {
 	fprintf(stderr, "error:%d: %s\n", line_num, msg);
-	// TODO: Memory leaaaks
 }
+

@@ -58,12 +58,12 @@ typedef struct seq_en_s seq_en_t;
 typedef STAILQ_HEAD(seq_list_s, seq_en_s) seq_list_t;
 
 /**
- * Parses a single line.
+ * Parses a single line. Returns zero on success, non-zero value otherwise.
  *      line            -- a line to parse
  *      line_num        -- number of the line (used for the error output)
  *      root (return)   -- root of the parsed structure
  */
-int parse_line(char * line, size_t line_num, seq_list_t **root);
+int parse_line(char * line, int line_num, seq_list_t **root);
 redir_list_t *create_redir_list();
 
 redir_list_t *append_redir_list(
@@ -73,5 +73,12 @@ redir_list_t *append_redir_list(
 piped_list_t *append_piped_list(piped_list_t *pl, command_t *cmd);
 seq_list_t *append_seq_list(seq_list_t *sl, piped_list_t *pl);
 arg_list_t *append_arg_list(arg_list_t *al, char *arg);
+
+void free_arg_list(arg_list_t *al);
+void free_redir_list(redir_list_t *rl);
+void free_command(command_t *cmdp);
+void free_piped_list(piped_list_t *pl);
+void free_seq_list(seq_list_t *sl);
+void free_redir(redir_t *redirp);
 
 #endif // CMD_H

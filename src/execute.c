@@ -1,14 +1,15 @@
 #include <stdio.h>
+#include <assert.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <sys/queue.h>
-#include <sys/types.h> // mode_t
 #include <sys/stat.h> // permissions
+#include <fcntl.h> // open types O_RDONLY, ...
 #include <unistd.h>
 #include <errno.h>
 #include <err.h>
 #include <string.h>
 #include <stdlib.h>
-#include <fcntl.h>
 
 #include "cd.h"
 #include "cmd.h"
@@ -18,37 +19,83 @@
 #define	FD_UNUSED -1
 #define	NULL_PID -1
 #define	RETVAL_UNKNOWN_CMD 127
+#define	RETVAL_SIGNAL 128
+#define RETVAL_SYNTAX_ERR 254
 
 typedef int *pid_arr_t;
 
+/* Globals */
+int is_sigint_terminated = 0;
+int is_exit_terminated = 0;
+int return_val = 0;
+
+/* Holds PIDs of processes spawned by current command. */
+static pid_arr_t pid_arr = NULL;
+
+static void execute_seq(seq_list_t *rootp);
 static pid_arr_t execute_piped(piped_list_t *pl);
 static int execute_command(command_t *cmdp, int fdin, int fdout, int fdX);
 static void handle_redirections(redir_list_t *rl);
 static char **arg_list_to_argv_view(arg_list_t * argqp, int *argc);
 static void safe_pipe(int pd[]);
-static int safe_open(const char *pathname, int flags, mode_t mode);
 static void replace_fd(int oldfd, int newfd);
 
-/* Globals */
-int should_exit = 0;
-
 void
-execute(seq_list_t *rootp)
+execution_sigint_handler(int sig)
 {
-	if (rootp == NULL) {
-		return;
+	assert(sig == SIGINT);
+	assert(pid_arr != NULL);
+	pid_arr_t pid_arr_it = pid_arr;
+	while (*pid_arr_it != NULL_PID) {
+		kill(*pid_arr_it, sig);
+		++pid_arr_it;
 	}
+	fprintf(stderr, "Killed by signal %d.\n", sig);
+	is_sigint_terminated = 1;
+}
+
+int
+execute_line(char *line, int line_num)
+{
+	seq_list_t *rootp;
+	if (parse_line(line, line_num, &rootp) == 0) {
+		execute_seq(rootp);
+		free_seq_list(rootp);
+		return 0;
+	} else {
+		return_val = RETVAL_SYNTAX_ERR;
+		return 1;
+	}
+}
+
+static void
+execute_seq(seq_list_t *rootp)
+{
+	/* TODO: Why is this line here? */
+	if (rootp == NULL) return;
+	is_sigint_terminated = 0;
 	seq_en_t *seq_en;
 	STAILQ_FOREACH(seq_en, rootp, entries) {
-		pid_arr_t pid_arr, pid_arr_it;
+		pid_arr_t pid_arr_it;
 		pid_arr = pid_arr_it = execute_piped(seq_en->value);
-		int stat_val;
+		safe_sigint_unblock();
 		while (*pid_arr_it != NULL_PID) {
+			int stat_val = 0;
 			waitpid(*pid_arr_it, &stat_val, 0);
+			if (WIFEXITED(stat_val)) {
+				return_val = WEXITSTATUS(stat_val);
+			} else if (WIFSIGNALED(stat_val)) {
+				return_val =
+					RETVAL_SIGNAL + WTERMSIG(stat_val);
+			} else {
+				return_val = -1;
+			}
 			++pid_arr_it;
 		}
+		safe_sigint_block();
 		free(pid_arr);
-		if (should_exit) return;
+		pid_arr = NULL;
+		if (is_exit_terminated || is_sigint_terminated) return;
 	}
 }
 
@@ -75,23 +122,23 @@ execute_piped(piped_list_t *pl)
 			char **argv =
 				arg_list_to_argv_view(cmdp->arg_list, &argc);
 			/* cd ignores redirections */
-			cd(argc, argv);
+			return_val = cd(argc, argv);
 			free(argv);
 			return pid_arr;
 		} else if (strcmp("exit", cmd_name) == 0) {
-			should_exit = 1;
+			is_exit_terminated = 1;
 			return pid_arr;
 		}
 	}
 
 	int cmd_idx = 0;
 	int is_first_command = 1;
-	int pd[2]; /* intermediate pipes */
+	int pd[2];	/* intermediate pipes */
 	STAILQ_FOREACH(piped_en, pl, entries) {
 		int is_last_command = 
 			(STAILQ_NEXT(piped_en, entries) == NULL);
-		int fdin, fdout, /* I/O fd used for piping */
-		    fdX; /* redundant FD in the current command */
+		int fdin, fdout,	/* I/O fd used for piping */
+		    fdX;		/* redundant FD */
 
 		fdin = (is_first_command) ? FD_UNUSED : pd[0];
 		if (is_last_command) {
@@ -134,9 +181,10 @@ execute_command(command_t *cmdp, int fdin, int fdout, int fdX)
 	switch (pid = fork()) {
 	case -1:
 		perror("-mysh: fork");
-		// TODO: Deallocate shit and tune ret value
 		exit(1);
 	case 0:
+		safe_sigint_setaction(SIG_DFL);
+		safe_sigint_unblock();
 		if (fdin != FD_UNUSED)	replace_fd(fdin, 0);
 		if (fdout != FD_UNUSED) replace_fd(fdout, 1);
 		if (fdX != FD_UNUSED) close(fdX);
@@ -197,15 +245,6 @@ safe_pipe(int pd[])
 		perror("-mysh: pipe");
 		exit(1);
 	}
-}
-
-static int
-safe_open(const char *pathname, int flags, mode_t mode)
-{
-	int fd;
-	if ((fd = open(pathname, flags, mode)) == -1)
-		err(1, "%s", pathname);
-	return fd;
 }
 
 /* Replaces oldfd with newfd and closes oldfd. */ 
