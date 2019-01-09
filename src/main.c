@@ -183,11 +183,11 @@ get_prompt()
 }
 
 static void
-interactive_sigint_handler(int sig)
+interactive_sigint_handler(int __attribute__((unused))sig)
 {
-		/* Reset the readline() */
-		printf("\n");
-		rl_on_new_line();
-		rl_replace_line("", 0);
-		rl_redisplay();
+	/* Reset the readline() */
+	printf("\n");
+	rl_on_new_line();
+	rl_replace_line("", 0);
+	rl_redisplay();
 }

@@ -109,8 +109,7 @@ execute_piped(piped_list_t *pl)
 	}
 	
 	/* NULL_PID terminated array of pids */	
-	pid_arr_t pid_arr = 
-		(pid_arr_t) safe_malloc((cmd_count + 1) * sizeof(int));
+	pid_arr = (pid_arr_t) safe_malloc((cmd_count + 1) * sizeof(int));
 	pid_arr[0] = NULL_PID;
 
 	// Treat single cd/exit command specially.
