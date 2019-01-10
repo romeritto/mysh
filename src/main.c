@@ -1,32 +1,35 @@
+#include <assert.h>
 #include <err.h>
+#include <fcntl.h>
 #include <libgen.h>
+/*
+ * stdio needs to be included before readline. It's weird why readline doesn't
+ * include it itself.
+ */
 #include <stdio.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
-#include <assert.h>
-#include <readline/readline.h>
-#include <readline/history.h>
-#include <fcntl.h>
 
 #include "execute.h"
 #include "utils.h"
 
 #define	PROMPT_PREFIX "mysh:"
-#define PROMPT_SUFFIX "$ "
-/* ARG_MAX was not defined on lab machine in limits.h */
-#define MAX_LINE_LEN 100000
+#define	PROMPT_SUFFIX "$ "
+/* ARG_MAX was not defined on lab machine in <limits.h>. */
+#define	MAX_LINE_LEN 100000
 
 typedef enum { MODE_FILE, MODE_CODE, MODE_INTERACTIVE, MODE_UNDEF } Mode;
 
-static int serve_interactive();
-static int serve_code(char *code);
-static int serve_file(char *fname);
+static void serve_interactive();
+static void serve_code(char *code);
+static void serve_file(char *fname);
 static char *get_prompt();
 static void interactive_sigint_handler(int sig);
 
-void
+static void
 usage(char *argv0)
 {
 	errx(1, "usage: %s [-c code | file]", argv0);
@@ -36,9 +39,9 @@ int
 main(int argc, char **argv)
 {
 	int opt;
-	char *argv0 = basename(argv[0]);
-	char *code = NULL;
-	char *fname = NULL;
+	char	*argv0 = basename(argv[0]),
+		*code = NULL,
+		*fname = NULL;
 	Mode mode = MODE_UNDEF;
 
 	/* Suppress getopt() error messages. */
@@ -49,7 +52,7 @@ main(int argc, char **argv)
 		case 'c':
 			/*
 			 * optarg should be copied since it might be
-			 * overwritten by another option or freed by getopt()
+			 * overwritten by another option or freed by getopt().
 			 */
 			if ((code = strdup(optarg)) == NULL)
 				err(1, "cannot alloc memory for -c optarg");
@@ -99,56 +102,54 @@ main(int argc, char **argv)
 		fprintf(stderr, "internal err: unknown mode");
 		assert(0);
 	}
-	
 
 	return (return_val);
 }
 
-static int
+static void
 serve_interactive() {
-    safe_sigint_block();
+	safe_sigint_block();
 	using_history();
+
 	while (!is_exit_terminated) {
 		char *prompt = get_prompt();
 		safe_sigint_setaction(interactive_sigint_handler);
-        safe_sigint_unblock();
+		safe_sigint_unblock();
 		char *line = readline(prompt);
-        safe_sigint_block();
-
+		safe_sigint_block();
 		free(prompt);
+
 		if (line == NULL) break;
 		if (strcmp(line, "") != 0) add_history(line);
 
-        safe_sigint_setaction(execution_sigint_handler);
-		execute_line(line, /* line_num */ 1);
+		safe_sigint_setaction(execution_sigint_handler);
+		execute_line(line, /* line_num = */ 1);
 		free(line);
 	}
 
 	/* Free memory used by history. */
- 	HISTORY_STATE *myhist = history_get_history_state();
- 	HIST_ENTRY **mylist = history_list();
- 	for (int i = 0; i < myhist->length; ++i)
- 		free_history_entry(mylist[i]);
+	HISTORY_STATE *myhist = history_get_history_state();
+	HIST_ENTRY **mylist = history_list();
+	for (int i = 0; i < myhist->length; ++i)
+		free_history_entry(mylist[i]);
 
- 	free(myhist);
- 	free(mylist);
-
-	return (0);
+	free(myhist);
+	free(mylist);
 }
 
-static int
+static void
 serve_code(char *code) {
-    safe_sigint_block();
+	safe_sigint_block();
 	safe_sigint_setaction(execution_sigint_handler);
-	execute_line(code, /* line_num */ 1);
-	return (0);
+	execute_line(code, /* line_num = */ 1);
 }
 
-static int
+static void
 serve_file(char *fname) {
-    safe_sigint_block();
+	safe_sigint_block();
 	safe_sigint_setaction(execution_sigint_handler);
-	int fd = safe_open(fname, O_RDONLY, /* unused */ 0);
+
+	int fd = safe_open(fname, O_RDONLY, /* mode = */ 0);
 	int line_num = 1;
 	while (!is_exit_terminated && !is_sigint_terminated) {
 		char *line;
@@ -159,12 +160,11 @@ serve_file(char *fname) {
 		int ret_execute = execute_line(line, line_num++);
 		free(line);
 
-		/* EOF */
+		/* getline hit EOF. */
 		if (ret_getline == 0) break;
-		/* Parse error */
+		/* Parse error. */
 		if (ret_execute != 0) break;
 	}
-	return (0);
 }
 
 /* Allocates a prompt with the format 'PROMPT_PREFIX + pwd + PROMPT_SUFFIX'. */
@@ -172,10 +172,11 @@ static char *
 get_prompt()
 {
 	char *pwd = getenv("PWD");
+	pwd = (pwd != NULL) ? pwd : "";
 	size_t prompt_len =
-		strlen(PROMPT_PREFIX) + strlen(pwd) + strlen(PROMPT_SUFFIX); 
+		strlen(PROMPT_PREFIX) + strlen(pwd) + strlen(PROMPT_SUFFIX);
 
-	char *prompt = (char *) safe_malloc((prompt_len + 1) * sizeof(char));
+	char *prompt = (char *) safe_malloc((prompt_len + 1) * sizeof (char));
 	strcpy(prompt, PROMPT_PREFIX);
 	strcat(prompt, pwd);
 	strcat(prompt, PROMPT_SUFFIX);

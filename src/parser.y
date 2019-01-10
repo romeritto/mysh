@@ -1,19 +1,18 @@
 %error-verbose
-%define parse.lac full
+%define	parse.lac full
 
 %{
-#include "cmd.h"
-#include "execute.h"
-#include "utils.h"
-
-#include <stdio.h>
-#include <sys/queue.h>
 #include <assert.h>
 #include <err.h>
+#include <stdio.h>
+#include <sys/queue.h>
 
+#include "execute.h"
+#include "cmd.h"
 #include "parser.h"
+#include "utils.h"
 
-// Bison needs to know about flex 
+/* Functions defined in flex. */
 extern int yylex();
 extern int yylex_destroy();
 extern void init_lexer_with_line(char *);
@@ -60,7 +59,7 @@ static seq_list_t *rootp = NULL;
 
 %%
 
-root: 
+root:
 	root_internal {
 		rootp = $1;
 		YYACCEPT;
@@ -76,8 +75,8 @@ root_internal:
 
 seq_list:
 	piped_list {
-		seq_list_t *sl = 
-			(seq_list_t *) safe_malloc(sizeof(seq_list_t));
+		seq_list_t *sl =
+			(seq_list_t *) safe_malloc(sizeof (seq_list_t));
 		STAILQ_INIT(sl);
 		append_seq_list(sl, $1);
 		$$ = sl;
@@ -89,9 +88,9 @@ seq_list:
 
 piped_list:
 	command {
-		piped_list_t * pl = 
+		piped_list_t * pl =
 			(piped_list_t *)
-			safe_malloc(sizeof(piped_list_t));
+			safe_malloc(sizeof (piped_list_t));
 		STAILQ_INIT(pl);
 		append_piped_list(pl, $1);
 		$$ = pl;
@@ -101,9 +100,10 @@ piped_list:
 		$$ = $1;
 	}
 
-command:	
+command:
 	redir_list arg_list redir_list {
-		command_t *cmdp = (command_t *) safe_malloc(sizeof(command_t));
+		command_t *cmdp =
+			(command_t *) safe_malloc(sizeof (command_t));
 		cmdp->arg_list = $2;
 		STAILQ_CONCAT($1, $3);
 		free($3);
@@ -139,8 +139,8 @@ arg_list:
 		$$ = $1;
 	}
 	| WORD {
-		arg_list_t * wl = 
-			(arg_list_t *) safe_malloc(sizeof(arg_list_t));
+		arg_list_t * wl =
+			(arg_list_t *) safe_malloc(sizeof (arg_list_t));
 		STAILQ_INIT(wl);
 		append_arg_list(wl, $1);
 		$$ = wl;
@@ -150,22 +150,21 @@ arg_list:
 int
 parse_line(char * line, int curline, seq_list_t **rootpp) {
 	assert(line != NULL);
-	
+
 	init_lexer_with_line(line);
 	line_num = curline;
-	
-	if (yyparse() != 0) {
+
+	if (yyparse() != 0)
 		return (1);
-	}
 
 	yylex_destroy();
 
-	*rootpp = rootp; 
+	*rootpp = rootp;
 	return (0);
 }
 
-void yyerror(const char *msg)
+void
+yyerror(const char *msg)
 {
 	fprintf(stderr, "error:%d: %s\n", line_num, msg);
 }
-

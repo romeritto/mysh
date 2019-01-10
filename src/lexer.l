@@ -1,6 +1,4 @@
-/* Scanner for mysh */
-
-%option noyywrap nostdinit
+%option	noyywrap nostdinit
 
 %{
 #include "cmd.h"
@@ -13,51 +11,51 @@ extern void yyerror(char *);
 
 %x COMMENT
 
-WHITESPACE  		[ \r\t\f]
-NON_SPECIAL_CHAR    [^ \r\t\f<>|;#\\'`"\]\[&\n]
+WHITESPACE		[ \r\t\f]
+NON_SPECIAL_CHAR	[^ \r\t\f<>|;#\\'`"\]\[&\n]
 
 %%
 
-">"      return REDIRECT_OUT; 
+">"	return (REDIRECT_OUT);
 
-">>"     return REDIRECT_APPEND_OUT;
+">>"	return (REDIRECT_APPEND_OUT);
 
-"<"      return REDIRECT_IN; 
+"<"	return (REDIRECT_IN);
 
-"|"      return PIPE;
+"|"	return (PIPE);
 
-";"      return SEQUENTIAL;
+";"	return (SEQUENTIAL);
 
-"#"                         BEGIN(COMMENT);
+"#"			BEGIN(COMMENT);
 
-<COMMENT>[^\n]+             /* eat everything until EOL/EOF */
+<COMMENT>[^\n]+		/* Eat everything until EOL/EOF. */
 
-<COMMENT>\n                 { 
-                                BEGIN(INITIAL);
-								return END_OF_LINE;
-                                /* TODO: increment newline */
-                            }
+<COMMENT>\n		{
+				BEGIN(INITIAL);
+				return (END_OF_LINE);
+			}
 
-\n                         return END_OF_LINE;
+\n			return (END_OF_LINE);
 
-{NON_SPECIAL_CHAR}+         {
-                                yylval.word_un = strdup(yytext);
-                                return WORD;
-                            }
+{NON_SPECIAL_CHAR}+	{
+				yylval.word_un = strdup(yytext);
+				return (WORD);
+			}
 
-{WHITESPACE}+               /* do nothing */
+{WHITESPACE}+		/* Do nothing. */
 
-<<EOF>>                     return END_OF_FILE;
+<<EOF>>			return (END_OF_FILE);
 
-.                           yyerror("unknown char");
+.			yyerror("Unknown char");
 
 %%
 
-YY_BUFFER_STATE myState;
+YY_BUFFER_STATE my_state;
 
-void init_lexer_with_line(const char * line)
+void
+init_lexer_with_line(const char * line)
 {
 	yylex_destroy();
-	myState = yy_scan_string(line);
+	my_state = yy_scan_string(line);
 	BEGIN(INITIAL);
 }
