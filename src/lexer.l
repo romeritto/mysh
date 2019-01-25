@@ -1,4 +1,4 @@
-%option	noyywrap nostdinit
+%option	noyywrap nostdinit nounput noinput
 
 %{
 #include "cmd.h"
